@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/operator-framework/operator-sdk/pkg/test"
-
 	apps "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -15,8 +14,10 @@ import (
 )
 
 const (
-	retryInterval = time.Second * 5
-	timeout       = time.Minute * 5
+	retryInterval        = time.Second * 5
+	timeout              = time.Minute * 1
+	cleanupRetryInterval = time.Second * 1
+	cleanupTimeout       = time.Second * 30
 )
 
 // WaitForResult polls the cluster for a particular resource name and namespace
@@ -70,4 +71,48 @@ func WaitForSuccessfulDeployment(t *testing.T, f *test.Framework, deployment app
 	}
 	t.Logf("Deployment %s has been initialized successfully\n", deployment.Name)
 	return nil
+}
+
+// WaitForNotFound polls the cluster for a particular resource name and namespace
+// If the request fails because the runtime object is found it retries until the specified timeout
+// If the request returns a IsNotFound error the method will return true
+func WaitForNotFound(t *testing.T, f *test.Framework, result runtime.Object, namespace, name string) error {
+	namespacedName := types.NamespacedName{Name: name, Namespace: namespace}
+	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+		err = f.Client.Get(context.TODO(), namespacedName, result)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+
+		t.Logf("Waiting for creation of %s runtime object\n", name)
+		return false, nil
+	})
+	if err != nil {
+		return err
+	}
+	t.Logf("Runtime object %s has been deleted\n", name)
+	return nil
+}
+
+// createRuntimeObject creates a runtime object using the test framework
+// If ctx is nil the object will not be deleted when ctx.Cleanup() is called
+func createRuntimeObject(f *test.Framework, ctx *test.TestCtx, obj runtime.Object) error {
+	return f.Client.Create(
+		context.TODO(),
+		obj,
+		&test.CleanupOptions{
+			TestContext:   ctx,
+			Timeout:       cleanupTimeout,
+			RetryInterval: cleanupRetryInterval,
+		})
+}
+
+// deleteRuntimeObject deletes a runtime object using the test framework
+func deleteRuntimeObject(f *test.Framework, ctx *test.TestCtx, obj runtime.Object) error {
+	return f.Client.Delete(
+		context.TODO(),
+		obj)
 }
