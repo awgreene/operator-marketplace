@@ -73,7 +73,32 @@ func WaitForSuccessfulDeployment(t *testing.T, f *test.Framework, deployment app
 	return nil
 }
 
+// WaitForNotFound polls the cluster for the absense of a particular resource name and namespace
+// If the request fails because the runtime object is found it retries until the specified timeout
+// If the request returns a IsNotFound error the method will return true
+func WaitForNotFound(t *testing.T, f *test.Framework, result runtime.Object, namespace, name string) error {
+	namespacedName := types.NamespacedName{Name: name, Namespace: namespace}
+	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+		err = f.Client.Get(context.TODO(), namespacedName, result)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+
+		t.Logf("Waiting for creation of %s runtime object\n", name)
+		return false, nil
+	})
+	if err != nil {
+		return err
+	}
+	t.Logf("Runtime object %s has been deleted\n", name)
+	return nil
+}
+
 // createRuntimeObject creates a runtime object using the test framework
+// If ctx is nil the object will not be deleted when ctx.Cleanup() is called
 func createRuntimeObject(f *test.Framework, ctx *test.TestCtx, obj runtime.Object) error {
 	return f.Client.Create(
 		context.TODO(),
@@ -83,4 +108,11 @@ func createRuntimeObject(f *test.Framework, ctx *test.TestCtx, obj runtime.Objec
 			Timeout:       cleanupTimeout,
 			RetryInterval: cleanupRetryInterval,
 		})
+}
+
+// deleteRuntimeObject deletes a runtime object using the test framework
+func deleteRuntimeObject(f *test.Framework, ctx *test.TestCtx, obj runtime.Object) error {
+	return f.Client.Delete(
+		context.TODO(),
+		obj)
 }

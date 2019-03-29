@@ -61,6 +61,7 @@ func TestMarketplace(t *testing.T) {
 	t.Run("marketplace-group", func(t *testing.T) {
 		t.Run("Cluster", MarketplaceCluster)
 		t.Run("csc-non-existing-namespace", runCSCWithNonExistingTargetNamespace)
+		t.Run("csc-other-namespace", runCSCOtherNamespace)
 	})
 }
 
