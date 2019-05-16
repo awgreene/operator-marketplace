@@ -5,6 +5,7 @@ import (
 
 	marketplace "github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
 	"github.com/operator-framework/operator-marketplace/pkg/phase"
+	"github.com/operator-framework/operator-marketplace/pkg/registry"
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -75,7 +76,7 @@ func (r *updateReconciler) deleteObjects(in *marketplace.CatalogSourceConfig) {
 
 	// Delete the CatalogSource
 	name := in.Name
-	catalogSource := new(CatalogSourceBuilder).
+	catalogSource := new(registry.CatalogSourceBuilder).
 		WithMeta(name, cachedCSCSpec.TargetNamespace).
 		CatalogSource()
 	if err := r.client.Delete(context.TODO(), catalogSource); err != nil {

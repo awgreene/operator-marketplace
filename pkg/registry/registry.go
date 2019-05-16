@@ -1,4 +1,4 @@
-package catalogsourceconfig
+package registry
 
 import (
 	"context"
@@ -25,7 +25,25 @@ const (
 	portName        = "grpc"
 )
 
+// RegistryOwnerNameLabel is the label used to mark ownership over registry resources.
+// When this label is set, the reconciler should handle these resources when the owner
+// is deleted.
+const RegistryOwnerNameLabel string = "owner-name"
+
+// RegistryOwnerNamespaceLabel is the label used to mark ownership over registry resources.
+// When this label is set, the reconciler should handle these resources when the owner
+// is deleted.
+const RegistryOwnerNamespaceLabel string = "owner-namespace"
+
 var action = []string{"grpc_health_probe", "-addr=localhost:50051"}
+
+// DefaultRegistryServerImage is the registry image to be used in the absence of
+// the command line parameter.
+const DefaultRegistryServerImage = "quay.io/openshift/origin-operator-registry"
+
+// RegistryServerImage is the image used for creating the operator registry pod.
+// This gets set in the cmd/manager/main.go.
+var RegistryServerImage string
 
 type catalogSourceConfigWrapper struct {
 	*marketplace.CatalogSourceConfig

@@ -1,4 +1,4 @@
-package catalogsourceconfig
+package registry
 
 import (
 	marketplace "github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
@@ -40,8 +40,8 @@ func (b *DeploymentBuilder) WithMeta(name, namespace string) *DeploymentBuilder 
 // WithOwnerLabel sets the owner label of the Deployment object to the given owner.
 func (b *DeploymentBuilder) WithOwnerLabel(owner *marketplace.CatalogSourceConfig) *DeploymentBuilder {
 	labels := map[string]string{
-		CscOwnerNameLabel:      owner.Name,
-		CscOwnerNamespaceLabel: owner.Namespace,
+		RegistryOwnerNameLabel:      owner.Name,
+		RegistryOwnerNamespaceLabel: owner.Namespace,
 	}
 
 	for key, value := range b.deployment.GetLabels() {

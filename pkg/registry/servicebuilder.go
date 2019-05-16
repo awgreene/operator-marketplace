@@ -1,4 +1,4 @@
-package catalogsourceconfig
+package registry
 
 import (
 	marketplace "github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
@@ -38,8 +38,8 @@ func (b *ServiceBuilder) WithMeta(name, namespace string) *ServiceBuilder {
 // WithOwnerLabel sets the owner label of the CatalogSource object to the given owner.
 func (b *ServiceBuilder) WithOwnerLabel(owner *marketplace.CatalogSourceConfig) *ServiceBuilder {
 	labels := map[string]string{
-		CscOwnerNameLabel:      owner.Name,
-		CscOwnerNamespaceLabel: owner.Namespace,
+		RegistryOwnerNameLabel:      owner.Name,
+		RegistryOwnerNamespaceLabel: owner.Namespace,
 	}
 
 	for key, value := range b.service.GetLabels() {

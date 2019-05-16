@@ -19,6 +19,10 @@ func init() {
 	Cache = New()
 }
 
+// DatastoreLabel is the label used to indicate that the resulting CatalogSource
+// acts as the datastore for the OperatorSource if it is set to "true".
+const DatastoreLabel string = "opsrc-datastore"
+
 // New returns an instance of memoryDatastore.
 func New() *memoryDatastore {
 	return &memoryDatastore{
