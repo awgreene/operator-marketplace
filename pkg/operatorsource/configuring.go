@@ -6,20 +6,19 @@ import (
 	marketplace "github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
 	"github.com/operator-framework/operator-marketplace/pkg/datastore"
 	"github.com/operator-framework/operator-marketplace/pkg/phase"
+	"github.com/operator-framework/operator-marketplace/pkg/registry"
 	log "github.com/sirupsen/logrus"
-	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // NewConfiguringReconciler returns a Reconciler that reconciles
 // an OperatorSource object in "Configuring" phase.
-func NewConfiguringReconciler(logger *log.Entry, datastore datastore.Writer, client client.Client) Reconciler {
+func NewConfiguringReconciler(logger *log.Entry, datastore datastore.Writer, reader datastore.Reader, client client.Client) Reconciler {
 	return &configuringReconciler{
 		logger:    logger,
 		datastore: datastore,
 		client:    client,
-		builder:   &CatalogSourceConfigBuilder{},
+		reader:    reader,
 	}
 }
 
@@ -29,7 +28,7 @@ type configuringReconciler struct {
 	logger    *log.Entry
 	datastore datastore.Writer
 	client    client.Client
-	builder   *CatalogSourceConfigBuilder
+	reader    datastore.Reader
 }
 
 // Reconcile reconciles an OperatorSource object that is in "Configuring" phase.
@@ -68,55 +67,15 @@ func (r *configuringReconciler) Reconcile(ctx context.Context, in *marketplace.O
 		WithOwnerLabel(in).
 		CatalogSourceConfig()
 
-	err = r.client.Create(ctx, cscCreate)
-	if err != nil && !k8s_errors.IsAlreadyExists(err) {
-		r.logger.Errorf("Unexpected error while creating CatalogSourceConfig: %s", err.Error())
-		nextPhase = phase.GetNextWithMessage(phase.Configuring, err.Error())
+	registryDeployer := registry.NewRegistryDeployer(r.logger, r.reader, r.client)
 
-		return
-	}
-
-	if err == nil {
-		nextPhase = phase.GetNext(phase.Succeeded)
-		r.logger.Info("CatalogSourceConfig object has been created successfully")
-
-		return
-	}
-
-	// If we are here, the given CatalogSourceConfig object already exists.
-	cscNamespacedName := types.NamespacedName{Name: in.Name, Namespace: in.Namespace}
-	cscExisting := marketplace.CatalogSourceConfig{}
-	err = r.client.Get(ctx, cscNamespacedName, &cscExisting)
+	err = registryDeployer.CreateRegistryResources(cscCreate)
 	if err != nil {
-		r.logger.Errorf("Unexpected error while getting CatalogSourceConfig: %s", err.Error())
 		nextPhase = phase.GetNextWithMessage(phase.Configuring, err.Error())
-
 		return
 	}
 
-	cscExisting.EnsureGVK()
-
-	builder := CatalogSourceConfigBuilder{object: cscExisting}
-	cscUpdate := builder.WithSpec(in.Namespace, manifests, in.Spec.DisplayName, in.Spec.Publisher).
-		WithLabels(in.GetLabels()).
-		WithOwnerLabel(in).
-		CatalogSourceConfig()
-
-	// Drop the status to force a CatalogSourceConfig update. This is to account
-	// for the the scenario where a Quay namespace has changed without
-	// app-registry repositories being added or removed but with existing
-	// repositories being updated.
-	cscUpdate.Status = marketplace.CatalogSourceConfigStatus{}
-
-	err = r.client.Update(ctx, cscUpdate)
-	if err != nil {
-		r.logger.Errorf("Unexpected error while updating CatalogSourceConfig: %s", err.Error())
-		nextPhase = phase.GetNextWithMessage(phase.Configuring, err.Error())
-
-		return
-	}
-
-	r.logger.Info("CatalogSourceConfig object has been updated successfully")
+	registryDeployer.EnsurePackagesInStatus(cscCreate)
 
 	nextPhase = phase.GetNext(phase.Succeeded)
 	return
