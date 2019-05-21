@@ -2,7 +2,9 @@ package catalogsourceconfig
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	marketplace "github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
@@ -430,6 +432,14 @@ func getCommand(packages string, appRegistries []string) []string {
 	for _, registry := range appRegistries {
 		command = append(command, "-r", registry)
 	}
+
+	packageList := strings.Split(packages, ",")
+	for i := range packageList {
+		fmt.Printf("working on package %s\n", packageList[i])
+		packageList[i] = strings.Replace(packageList[i], strings.Split(packageList[i], "/")[0]+"/", "", -1)
+	}
+
+	packages = strings.Join(packageList, ",")
 	command = append(command, "-o", packages)
 	return command
 }

@@ -121,7 +121,14 @@ type memoryDatastore struct {
 }
 
 func (ds *memoryDatastore) Read(packageID string) (opsrcMeta *OpsrcRef, err error) {
-	repository, err := ds.GetRepositoryByPackageName(packageID)
+	var repository *Repository
+
+	hasNamespace, namespacedPackage := getNamespacedPackage(packageID)
+	if hasNamespace {
+		repository, err = ds.getRepositoryByNamespaceAndPackageName(namespacedPackage.namespace, namespacedPackage.pkg)
+	} else {
+		repository, err = ds.getRepositoryByPackageName(packageID)
+	}
 	if err != nil {
 		return
 	}
@@ -131,8 +138,28 @@ func (ds *memoryDatastore) Read(packageID string) (opsrcMeta *OpsrcRef, err erro
 	return
 }
 
+type namespacedPackage struct {
+	namespace string
+	pkg       string
+}
+
+func getNamespacedPackage(packageID string) (bool, *namespacedPackage) {
+	result := strings.Split(packageID, "/")
+	if len(result) > 1 {
+		return true, &namespacedPackage{result[0], result[1]}
+	}
+	return false, nil
+}
+
 func (ds *memoryDatastore) ReadRepositoryVersion(packageID string) (version string, err error) {
-	repository, err := ds.GetRepositoryByPackageName(packageID)
+	var repository *Repository
+
+	hasNamespace, namespacedPackage := getNamespacedPackage(packageID)
+	if hasNamespace {
+		repository, err = ds.getRepositoryByNamespaceAndPackageName(namespacedPackage.namespace, namespacedPackage.pkg)
+	} else {
+		repository, err = ds.getRepositoryByPackageName(packageID)
+	}
 	if err != nil {
 		return
 	}
@@ -175,7 +202,7 @@ func (ds *memoryDatastore) Write(opsrc *marketplace.OperatorSource, registryMeta
 	return
 }
 
-func (ds *memoryDatastore) GetRepositoryByPackageName(pkg string) (repository *Repository, err error) {
+func (ds *memoryDatastore) getRepositoryByPackageName(pkg string) (repository *Repository, err error) {
 	repositories := ds.rows.GetAllRepositories()
 
 	if len(repositories) == 0 {
@@ -189,6 +216,30 @@ func (ds *memoryDatastore) GetRepositoryByPackageName(pkg string) (repository *R
 		}
 	}
 	if repository == nil {
+		err = fmt.Errorf("datastore has no record of the specified package [%s]", pkg)
+	}
+	return
+}
+
+func (ds *memoryDatastore) getRepositoryByNamespaceAndPackageName(namespace, pkg string) (repository *Repository, err error) {
+	repositories := ds.rows.GetAllRepositories()
+
+	if len(repositories) == 0 {
+		err = fmt.Errorf("Datastore is empty. No package metadata to return.")
+		return
+	}
+
+	for _, repo := range repositories {
+		//fmt.Printf("Current namespace (%s) vs target namespace (%s)\n", repo.Metadata.Namespace, namespace)
+		//fmt.Printf("Current namespace (%s) vs target namespace (%s)\n", repo.Package, pkg)
+		if repo.Metadata.Namespace == namespace && repo.Package == pkg {
+			//fmt.Printf("WE HAVE A MATCH\n")
+			repository = repo
+			//fmt.Printf("THE REPOSITORY IS %s\n", repository.Metadata.Namespace)
+		}
+	}
+	if repository == nil {
+		//fmt.Printf("Somehow here????\n")
 		err = fmt.Errorf("datastore has no record of the specified package [%s]", pkg)
 	}
 	return
