@@ -430,6 +430,7 @@ func getCommand(packages string, appRegistries []string) []string {
 	for _, registry := range appRegistries {
 		command = append(command, "-r", registry)
 	}
+	packages = RemoveNamespaces(packages)
 	command = append(command, "-o", packages)
 	return command
 }

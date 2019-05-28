@@ -186,6 +186,8 @@ func (ds *memoryDatastore) GetRepositoryByPackageName(pkg string) (repository *R
 	for _, repo := range repositories {
 		if repo.Package == pkg {
 			repository = repo
+		} else if strings.Contains(pkg, "/") && repo.Metadata.Namespace+"/"+repo.Package == pkg {
+			repository = repo
 		}
 	}
 	if repository == nil {
