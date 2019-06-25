@@ -46,10 +46,13 @@ rules:
   - ""
   resources:
   - secrets
+  - pods
+  - configmaps
   verbs:
   - get
   - list
   - watch
+  - create
 - apiGroups:
   - ""
   resources:
