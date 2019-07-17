@@ -11,6 +11,7 @@ import (
 	"github.com/operator-framework/operator-marketplace/pkg/builders"
 	wrapper "github.com/operator-framework/operator-marketplace/pkg/client"
 	"github.com/operator-framework/operator-marketplace/pkg/datastore"
+	"github.com/operator-framework/operator-marketplace/pkg/proxy"
 	"github.com/sirupsen/logrus"
 	apps "k8s.io/api/apps/v1"
 	core "k8s.io/api/core/v1"
@@ -137,6 +138,9 @@ func (r *registry) ensureDeployment(appRegistries []string, needServiceAccount b
 			if needServiceAccount {
 				deployment.Spec.Template.Spec.ServiceAccountName = r.key.Name
 			}
+			// Add, Update, or Remove the proxy env vars based on their values in the marketplace pod.
+			deployment.Spec.Template.Spec.Containers[0].Env = proxy.Manage(deployment.Spec.Template.Spec.Containers[0].Env)
+
 		}
 		// Set or update the annotation to force an update. This is required so that we get updates
 		// from Quay during the sync cycle when packages have not been added or removed from the spec.
@@ -354,6 +358,10 @@ func (r *registry) newPodTemplateSpec(registryCommand []string, needServiceAccou
 	if needServiceAccount {
 		podTemplateSpec.Spec.ServiceAccountName = r.key.Name
 	}
+
+	// Add, Update, or Remove the proxy env vars based on their values in the marketplace pod.
+	podTemplateSpec.Spec.Containers[0].Env = proxy.Manage(podTemplateSpec.Spec.Containers[0].Env)
+
 	return podTemplateSpec
 }
 

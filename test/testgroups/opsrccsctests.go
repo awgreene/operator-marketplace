@@ -11,6 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var proxyAPIAvailable = false
+
+// SetProxyApiAvailable allows tests that rely on an existing OperatorSource and CO API to be ran
+func SetProxyApiAvailable(isAvailable bool) {
+	proxyAPIAvailable = true
+}
+
 // OpSrcCscTestGroup creates an OperatorSource and a CatalogSourceConfig and then runs a series of
 // test suites that rely on these resources.
 func OpSrcCscTestGroup(t *testing.T) {
@@ -43,6 +50,9 @@ func OpSrcCscTestGroup(t *testing.T) {
 	require.NoError(t, err, "CatalogSourceConfig child resources were not created")
 
 	// Run the test suites.
+	if proxyAPIAvailable {
+		t.Run("proxy-test-suites", testsuites.ProxyTests)
+	}
 	t.Run("opsrc-creation-test-suite", testsuites.OpSrcCreation)
 	t.Run("csc-target-namespace-test-suite", testsuites.CscTargetNamespace)
 	t.Run("packages-test-suite", testsuites.PackageTests)

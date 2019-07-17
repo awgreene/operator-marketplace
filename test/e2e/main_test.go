@@ -17,6 +17,7 @@ import (
 )
 
 var coAPIPresent = true
+var ProxyAPIPresent = true
 
 func TestMain(m *testing.M) {
 	test.MainEntry(m)
@@ -29,6 +30,8 @@ func TestMarketplace(t *testing.T) {
 	// Run Test Groups
 	if coAPIPresent {
 		t.Run("cluster-operator-status-test-group", testgroups.ClusterOperatorTestGroup)
+		// If CO API is available, assume proxy api is as well.
+		testgroups.SetProxyApiAvailable(true)
 	}
 	t.Run("opsrc-csc-test-group", testgroups.OpSrcCscTestGroup)
 	t.Run("no-setup-test-group", testgroups.NoSetupTestGroup)

@@ -5,7 +5,9 @@ import (
 
 	"github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
 	operatorsourcehandler "github.com/operator-framework/operator-marketplace/pkg/operatorsource"
+	"github.com/operator-framework/operator-marketplace/pkg/proxy"
 	"github.com/operator-framework/operator-marketplace/pkg/status"
+	"github.com/operator-framework/operator-marketplace/pkg/watches"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,7 +25,7 @@ func Add(mgr manager.Manager) error {
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
+func newReconciler(mgr manager.Manager) *ReconcileOperatorSource {
 	client := mgr.GetClient()
 	handler := operatorsourcehandler.NewHandler(mgr, client)
 	return &ReconcileOperatorSource{
@@ -33,7 +35,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
+func add(mgr manager.Manager, r *ReconcileOperatorSource) error {
 	// Create a new controller
 	c, err := controller.New("operatorsource-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
@@ -44,6 +46,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	err = c.Watch(&source.Kind{Type: &v1.OperatorSource{}}, &handler.EnqueueRequestForObject{})
 	if err != nil {
 		return err
+	}
+
+	// Only add watch if proxy API is available.
+	if proxy.IsAPIAvailable() {
+		err = watches.WatchProxyEvents(c, r.client, v1.OperatorSourceKind)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
