@@ -3,6 +3,7 @@ package watches
 import (
 	"context"
 
+	apiconfigv1 "github.com/openshift/api/config/v1"
 	"github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
 	"github.com/operator-framework/operator-marketplace/pkg/proxy"
 	"k8s.io/apimachinery/pkg/types"
@@ -18,21 +19,23 @@ type proxyToOperatorSources struct {
 // Map will update the proxy environment variables and create a reconcile request for
 // all OperatorSources.
 func (m *proxyToOperatorSources) Map(obj handler.MapObject) []reconcile.Request {
-	requests := []reconcile.Request{}
-
-	// Ensure that operator environment variables are in sync with those in proxy.
-	err := proxy.SetOperatorEnvVars(m.client)
+	clusterProxy := &apiconfigv1.Proxy{}
+	err := m.client.Get(context.TODO(), proxy.ClusterProxyKey, clusterProxy)
 	if err != nil {
-		return requests
+		return nil
 	}
 
-	options := &client.ListOptions{}
+	// Ensure that proxy is up to date.
+	proxy.GetInstance().SetProxy(clusterProxy)
+
+	// Get the list of OperatorSources.
 	opsrcs := &v1.OperatorSourceList{}
-
-	if err := m.client.List(context.TODO(), options, opsrcs); err != nil {
-		return requests
+	if err := m.client.List(context.TODO(), &client.ListOptions{}, opsrcs); err != nil {
+		return nil
 	}
 
+	// Add each OperatorSource to the request
+	requests := []reconcile.Request{}
 	for _, opsrc := range opsrcs.Items {
 		requests = append(requests, reconcile.Request{types.NamespacedName{Name: opsrc.GetName(), Namespace: opsrc.GetNamespace()}})
 	}

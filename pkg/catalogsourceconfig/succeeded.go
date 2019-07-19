@@ -67,7 +67,7 @@ func (r *succeededReconciler) Reconcile(ctx context.Context, in *v2.CatalogSourc
 
 	// Check if the environment variables in the deployment created by the CatalogSourceConfig
 	// are out of sync with those in the global proxy.
-	needsUpdate, err := proxy.CheckDeploymentEnvVars(r.client, in.Name, in.Namespace)
+	needsUpdate, err := proxy.GetInstance().CheckDeploymentEnvVars(r.client, in.Name, in.Namespace)
 	if err != nil {
 		return
 	}

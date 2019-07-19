@@ -7,7 +7,7 @@ import (
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
 	apprclient "github.com/operator-framework/go-appr/appregistry"
-	"golang.org/x/net/http/httpproxy"
+	"github.com/operator-framework/operator-marketplace/pkg/proxy"
 	"net/http"
 )
 
@@ -47,7 +47,7 @@ func (f *factory) New(options Options) (Client, error) {
 	cli := &http.Client{
 		Transport: &http.Transport{
 			Proxy: func(req *http.Request) (*url.URL, error) {
-				return httpproxy.FromEnvironment().ProxyFunc()(req.URL)
+				return proxy.GetInstance().GetProxyConfig().ProxyFunc()(req.URL)
 			},
 		},
 	}
