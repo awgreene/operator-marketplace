@@ -13,6 +13,7 @@ import (
 	mktconfig "github.com/operator-framework/operator-marketplace/pkg/apis/config/v1"
 	"github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
 	"github.com/operator-framework/operator-marketplace/pkg/apis/operators/v2"
+	ca "github.com/operator-framework/operator-marketplace/pkg/certificateauthority"
 	"github.com/operator-framework/operator-marketplace/pkg/operatorhub"
 	log "github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,6 +51,10 @@ const (
 	// Marketplace is always upgradeable and should include this message in the Upgradeable
 	// ClusterOperatorStatus condition.
 	upgradeableMessage = "Marketplace is upgradeable"
+
+	// missingCaWaitTime is the length of time marketplace must wait prior to reporting that
+	// it is in a degraded state due to a missing Certificate Authority bundle.
+	missingCaWaitTime = time.Hour * 1
 )
 
 // status will be a singleton
@@ -71,6 +76,8 @@ type status struct {
 	monitorDoneCh chan struct{}
 	// OpSrcErrorTracker tracks StatusErrors related to enabled default OperatorSources.
 	opSrcErrorTracker OpSrcErrorTracker
+	// startTime represents when the status object was created.
+	startTime time.Time
 }
 
 // SendSyncMessage is used to send messages to the syncCh. If the channel is
@@ -170,6 +177,7 @@ func new(cfg *rest.Config, mgr manager.Manager, namespace string, version string
 		stopCh:            stopCh,
 		monitorDoneCh:     monitorDoneCh,
 		opSrcErrorTracker: NewOpSrcErrorTracker(),
+		startTime:         time.Now(),
 	}
 }
 
@@ -400,17 +408,27 @@ func (s *status) monitorClusterStatus() {
 			s.opSrcErrorTracker.Sync(operatorhub.GetSingleton())
 			keys, opsrcErrorMap := s.opSrcErrorTracker.GetKeysAndMap()
 			if len(keys) > 0 {
-				// Report the first known default enabled OperatorSource error.
-				key := keys[0]
-				opsrcError, ok := IsStatusError(opsrcErrorMap[key])
-				if ok {
-					reason = opsrcError.Reason()
-				} else {
-					reason = string(UnknownError)
+				// Report degraded if the Certificate Authority bundle is on disk or
+				// the wait time to report degraded due to a missing bundle has elapsed.
+				//
+				// The second condition must be included because marketplace is upgraded
+				// before the cluster-network-operator, which injects a ConfigMap with Certificate
+				// Authority bundle which is in turn mounted into the marketplace operator. Failure
+				// to include this check breaks upgrades from 4.1 to 4.2.
+				// TODO: Remove this if statement once 4.3 master branch opens.
+				if ca.IsCaBundlePresentOnDisk() || s.elapsedTime() > missingCaWaitTime {
+					// Report the first known default enabled OperatorSource error.
+					key := keys[0]
+					opsrcError, ok := IsStatusError(opsrcErrorMap[key])
+					if ok {
+						reason = opsrcError.Reason()
+					} else {
+						reason = string(UnknownError)
+					}
+					statusConditions := conditionListBuilder(configv1.OperatorDegraded, configv1.ConditionTrue, fmt.Sprintf("Default OperatorSource (%s) is failing: %v", key, opsrcError.Error()), reason)
+					statusErr = s.setStatus(statusConditions)
+					break
 				}
-				statusConditions := conditionListBuilder(configv1.OperatorDegraded, configv1.ConditionTrue, fmt.Sprintf("Default OperatorSource (%s) is failing: %v", key, opsrcError.Error()), reason)
-				statusErr = s.setStatus(statusConditions)
-				break
 			}
 
 			// Update the status based on the ability to transition operands.
@@ -440,4 +458,8 @@ func ReportMigration(cfg *rest.Config, mgr manager.Manager, namespace string, ve
 	conditionListBuilder(configv1.OperatorUpgradeable, configv1.ConditionFalse, msg, "Upgrading")
 	statusConditions := conditionListBuilder(configv1.OperatorDegraded, configv1.ConditionFalse, msg, "Upgrading")
 	return instance.setStatus(statusConditions)
+}
+
+func (s *status) elapsedTime() time.Duration {
+	return time.Since(s.startTime)
 }
