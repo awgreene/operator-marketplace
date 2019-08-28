@@ -32,6 +32,7 @@ type operatorhub struct {
 type OperatorHub interface {
 	Get() map[string]bool
 	Set(spec configv1.OperatorHubSpec)
+	IsPresentAndEnabled(name string) bool
 }
 
 // GetSingleton returns the singleton instance of HubConfig
@@ -44,6 +45,18 @@ func (o *operatorhub) Get() map[string]bool {
 	o.lock.Lock()
 	defer o.lock.Unlock()
 	return o.current
+}
+
+// IsPresentAndEnabled returns true if the name matches a key in
+// the current ConfigMap and its value is true.
+func (o *operatorhub) IsPresentAndEnabled(name string) bool {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+	disabled, present := o.current[name]
+	if !present {
+		return false
+	}
+	return !disabled
 }
 
 // Set sets the current configuration based on the spec. If the spec is empty,

@@ -11,6 +11,7 @@ import (
 	"github.com/operator-framework/operator-marketplace/pkg/datastore"
 	"github.com/operator-framework/operator-marketplace/pkg/grpccatalog"
 	"github.com/operator-framework/operator-marketplace/pkg/phase"
+	"github.com/operator-framework/operator-marketplace/pkg/status"
 	log "github.com/sirupsen/logrus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -49,6 +50,21 @@ type configuringReconciler struct {
 	reader    datastore.Reader
 }
 
+// Reconcile wraps the reconcile function and reports an OperatorSource error
+// to the ClusterOperator if a StatusError is returned.
+func (r *configuringReconciler) Reconcile(ctx context.Context, in *v1.OperatorSource) (out *v1.OperatorSource, nextPhase *shared.Phase, err error) {
+	// Call the actual reconcile function.
+	out, nextPhase, err = r.reconcile(ctx, in)
+
+	// Report a StatusError.
+	statusErr, ok := status.IsStatusError(err)
+	if ok {
+		status.ReportOperatorSourceError(out.Name, statusErr)
+	}
+
+	return
+}
+
 // Reconcile reconciles an OperatorSource object that is in "Configuring" phase.
 // It ensures that a corresponding CatalogSourceConfig object exists.
 //
@@ -68,7 +84,7 @@ type configuringReconciler struct {
 //
 // If the corresponding CatalogSourceConfig object already exists
 // then no further action is taken.
-func (r *configuringReconciler) Reconcile(ctx context.Context, in *v1.OperatorSource) (out *v1.OperatorSource, nextPhase *shared.Phase, err error) {
+func (r *configuringReconciler) reconcile(ctx context.Context, in *v1.OperatorSource) (out *v1.OperatorSource, nextPhase *shared.Phase, err error) {
 	if in.GetCurrentPhaseName() != phase.Configuring {
 		err = phase.ErrWrongReconcilerInvoked
 		return
@@ -85,7 +101,7 @@ func (r *configuringReconciler) Reconcile(ctx context.Context, in *v1.OperatorSo
 	}
 
 	if len(metadata) == 0 {
-		err = errors.New("The OperatorSource endpoint returned an empty manifest list")
+		err = status.NewStatusError(status.AppRegistryMetadataEmptyError, errors.New("The OperatorSource endpoint returned an empty manifest list"))
 
 		// Moving it to 'Failed' phase since human intervention is required to
 		// resolve this situation. As soon as the user pushes new operator
@@ -99,6 +115,7 @@ func (r *configuringReconciler) Reconcile(ctx context.Context, in *v1.OperatorSo
 
 	isResyncNeeded, err := r.writeMetadataToDatastore(in, out, metadata)
 	if err != nil {
+		err = status.NewStatusError(status.DataStoreWriteError, err)
 		// No operator metadata was written, move to Failed phase.
 		nextPhase = phase.GetNextWithMessage(phase.Failed, err.Error())
 		return
@@ -128,6 +145,7 @@ func (r *configuringReconciler) Reconcile(ctx context.Context, in *v1.OperatorSo
 	}
 	err = grpcCatalog.EnsureResources(key, in.Spec.DisplayName, in.Spec.Publisher, in.Namespace, in.Name, packages, v1.OperatorSourceKind, labels)
 	if err != nil {
+		err = status.NewStatusError(status.EnsureResourcesError, err)
 		nextPhase = phase.GetNextWithMessage(phase.Configuring, err.Error())
 		return
 	}
@@ -146,17 +164,17 @@ func (r *configuringReconciler) getManifestMetadata(spec *v1.OperatorSourceSpec,
 
 	options, err := SetupAppRegistryOptions(r.client, spec, namespace)
 	if err != nil {
-		return metadata, err
+		return metadata, status.NewStatusError(status.AppRegistryOptionsError, err)
 	}
 
 	registry, err := r.factory.New(options)
 	if err != nil {
-		return metadata, err
+		return metadata, status.NewStatusError(status.AppRegistryFactoryError, err)
 	}
 
 	metadata, err = registry.ListPackages(spec.RegistryNamespace)
 	if err != nil {
-		return metadata, err
+		return metadata, status.NewStatusError(status.AppRegistryListPackagesError, err)
 	}
 
 	return metadata, nil

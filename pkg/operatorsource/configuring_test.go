@@ -20,6 +20,7 @@ import (
 	mocks "github.com/operator-framework/operator-marketplace/pkg/mocks/operatorsource_mocks"
 	"github.com/operator-framework/operator-marketplace/pkg/operatorsource"
 	"github.com/operator-framework/operator-marketplace/pkg/phase"
+	"github.com/operator-framework/operator-marketplace/pkg/status"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -280,7 +281,7 @@ func TestReconcile_UpdateError_MovedToFailedPhase(t *testing.T) {
 
 	namespace, name := "marketplace", "foo"
 
-	updateError := k8s_errors.NewServerTimeout(schema.GroupResource{}, "operation", 1)
+	updateError := status.NewStatusError(status.EnsureResourcesError, k8s_errors.NewServerTimeout(schema.GroupResource{}, "operation", 1))
 	nextPhaseWant := &shared.Phase{
 		Name:    phase.Configuring,
 		Message: updateError.Error(),
@@ -336,6 +337,16 @@ func TestReconcile_UpdateError_MovedToFailedPhase(t *testing.T) {
 	_, nextPhaseGot, errGot := reconciler.Reconcile(ctx, opsrcIn)
 
 	assert.Error(t, errGot)
-	assert.Equal(t, updateError, errGot)
+
+	// Convert errors to StatusErrors
+	statusErrGot, ok := status.IsStatusError(errGot)
+	assert.True(t, ok)
+
+	updateStatusError, ok := status.IsStatusError(updateError)
+	assert.True(t, ok)
+
+	// Compare expected and actual StatusErrors
+	assert.Equal(t, updateStatusError.Error(), statusErrGot.Error())
+	assert.Equal(t, updateStatusError.Reason(), statusErrGot.Reason())
 	assert.Equal(t, nextPhaseWant, nextPhaseGot)
 }

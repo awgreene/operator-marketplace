@@ -8,6 +8,7 @@ import (
 	"github.com/operator-framework/operator-marketplace/pkg/defaults"
 	"github.com/operator-framework/operator-marketplace/pkg/operatorhub"
 	"github.com/operator-framework/operator-marketplace/pkg/phase"
+	"github.com/operator-framework/operator-marketplace/pkg/status"
 	"github.com/operator-framework/operator-marketplace/pkg/watches"
 	log "github.com/sirupsen/logrus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,6 +68,9 @@ func (r *succeededReconciler) Reconcile(ctx context.Context, in *v1.OperatorSour
 	}
 
 	err = defaults.New(defaults.GetGlobalDefinitions(), operatorhub.GetSingleton().Get()).Ensure(r.client, in.Name)
+
+	// Report the OperatorSource success.
+	status.ReportOperatorSourceSuccess(out.Name)
 
 	return
 }

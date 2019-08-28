@@ -13,6 +13,7 @@ import (
 	mktconfig "github.com/operator-framework/operator-marketplace/pkg/apis/config/v1"
 	"github.com/operator-framework/operator-marketplace/pkg/apis/operators/v1"
 	"github.com/operator-framework/operator-marketplace/pkg/apis/operators/v2"
+	"github.com/operator-framework/operator-marketplace/pkg/operatorhub"
 	log "github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,7 +22,7 @@ import (
 )
 
 const (
-	// clusterOperatorName is the name of the ClusterOperator
+	// clusterOperatorName is the name of the ClusterOperator.
 	clusterOperatorName = "marketplace"
 
 	// minSyncsBeforeReporting is the minimum number of syncs we wish to see
@@ -68,6 +69,8 @@ type status struct {
 	stopCh <-chan struct{}
 	// monitorDoneCh is used to signal that threads are done reporting ClusterOperator status
 	monitorDoneCh chan struct{}
+	// OpSrcErrorTracker tracks StatusErrors related to enabled default OperatorSources.
+	opSrcErrorTracker OpSrcErrorTracker
 }
 
 // SendSyncMessage is used to send messages to the syncCh. If the channel is
@@ -86,6 +89,26 @@ func SendSyncMessage(err error) {
 	default:
 		log.Debugf("[status] Sync channel is busy, not reporting sync")
 	}
+}
+
+// ReportOperatorSourceError is used to report that an enabled default OperatorSource has encountered an error.
+func ReportOperatorSourceError(name string, err StatusError) {
+	// Do not report the error if the coAPI is not available or it is not an enabled default OperatorSource.
+	if instance == nil || instance.coAPINotPresent || !operatorhub.GetSingleton().IsPresentAndEnabled(name) {
+		return
+	}
+
+	instance.opSrcErrorTracker.Add(name, err)
+}
+
+// ReportOperatorSourceSuccess is used to report that an enabled default OperatorSource has entered the succeeded state.
+func ReportOperatorSourceSuccess(name string) {
+	// Do not report the success if the coAPI is not available.
+	if instance == nil || instance.coAPINotPresent {
+		return
+	}
+
+	instance.opSrcErrorTracker.Remove(name)
 }
 
 // StartReporting ensures that the cluster supports reporting ClusterOperator status
@@ -143,9 +166,10 @@ func new(cfg *rest.Config, mgr manager.Manager, namespace string, version string
 		version:         version,
 		syncRatio:       syncRatio,
 		// Add a buffer to prevent dropping syncs
-		syncCh:        make(chan error, 25),
-		stopCh:        stopCh,
-		monitorDoneCh: monitorDoneCh,
+		syncCh:            make(chan error, 25),
+		stopCh:            stopCh,
+		monitorDoneCh:     monitorDoneCh,
+		opSrcErrorTracker: NewOpSrcErrorTracker(),
 	}
 }
 
@@ -365,23 +389,34 @@ func (s *status) monitorClusterStatus() {
 				break
 			}
 
-			// Report that marketplace is available after meeting minimal syncs.
-			if cohelpers.IsStatusConditionFalse(s.clusterOperator.Status.Conditions, configv1.OperatorAvailable) {
-				reason := "OperatorAvailable"
-				conditionListBuilder := clusterStatusListBuilder()
-				conditionListBuilder(configv1.OperatorProgressing, configv1.ConditionFalse, fmt.Sprintf("Successfully progressed to release version: %s", s.version), reason)
-				conditionListBuilder(configv1.OperatorUpgradeable, configv1.ConditionTrue, upgradeableMessage, reason)
-				statusConditions := conditionListBuilder(configv1.OperatorAvailable, configv1.ConditionTrue, fmt.Sprintf("Available release version: %s", s.version), reason)
+			// At this point marketplace is Available, can be Upgraded, and has finished Progressing to the latest version.
+			conditionListBuilder := clusterStatusListBuilder()
+			reason := "OperatorAvailable"
+			conditionListBuilder(configv1.OperatorProgressing, configv1.ConditionFalse, fmt.Sprintf("Successfully progressed to release version: %s", s.version), reason)
+			conditionListBuilder(configv1.OperatorAvailable, configv1.ConditionTrue, fmt.Sprintf("Available release version: %s", s.version), reason)
+			conditionListBuilder(configv1.OperatorUpgradeable, configv1.ConditionTrue, upgradeableMessage, reason)
+
+			// Ensure that enabled default OperatorSources are not failing.
+			s.opSrcErrorTracker.Sync(operatorhub.GetSingleton())
+			keys, opsrcErrorMap := s.opSrcErrorTracker.GetKeysAndMap()
+			if len(keys) > 0 {
+				// Report the first known default enabled OperatorSource error.
+				key := keys[0]
+				opsrcError, ok := IsStatusError(opsrcErrorMap[key])
+				if ok {
+					reason = opsrcError.Reason()
+				} else {
+					reason = string(UnknownError)
+				}
+				statusConditions := conditionListBuilder(configv1.OperatorDegraded, configv1.ConditionTrue, fmt.Sprintf("Default OperatorSource (%s) is failing: %v", key, opsrcError.Error()), reason)
 				statusErr = s.setStatus(statusConditions)
 				break
 			}
 
-			// Update the status with the appropriate state.
+			// Update the status based on the ability to transition operands.
 			isSucceeding, ratio := s.syncRatio.IsSucceeding()
 			if ratio != nil {
 				var statusConditions []configv1.ClusterOperatorStatusCondition
-				conditionListBuilder := clusterStatusListBuilder()
-				conditionListBuilder(configv1.OperatorUpgradeable, configv1.ConditionTrue, upgradeableMessage, "OperatorAvailable")
 				if isSucceeding {
 					statusConditions = conditionListBuilder(configv1.OperatorDegraded, configv1.ConditionFalse, fmt.Sprintf("Current CR sync ratio (%g) meets the expected success ratio (%g)", *ratio, successRatio), "OperandTransitionsSucceeding")
 				} else {
